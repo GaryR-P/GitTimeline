@@ -17,5 +17,114 @@
     <button id="submitCommand">Submit</button>
 
     <svg id="graph" width="800" height="400"></svg>
+
+    <script type="module">
+      import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+
+      const input = document.getElementById("commandInput");
+      const button = document.getElementById("submitCommand");
+
+      let branches = { main: [] };
+      let currentBranch = "main";
+
+      function handleCommand(command) {
+        const parts = command.trim().split(/\s+/);
+        if (parts[0] === "git" && parts[1] === "commit") {
+          const messageIndex = parts.indexOf("-m");
+          const message = messageIndex !== -1 && parts[messageIndex + 1]
+            ? parts.slice(messageIndex + 1).join(" ").replace(/['"]/g, "").trim()
+            : "No message";
+          branches[currentBranch].push({ message, mergeFrom: null });
+        } else if (parts[0] === "git" && parts[1] === "branch") {
+          const newBranch = parts[2];
+          if (newBranch && !branches[newBranch]) {
+            branches[newBranch] = [...branches[currentBranch]];
+          }
+        } else if (parts[0] === "git" && parts[1] === "checkout") {
+          const targetBranch = parts[2];
+          if (branches[targetBranch]) {
+            currentBranch = targetBranch;
+          }
+        } else if (parts[0] === "git" && parts[1] === "merge") {
+          const sourceBranch = parts[2];
+          if (branches[sourceBranch]) {
+            branches[currentBranch].push({
+              message: `Merge from ${sourceBranch}`,
+              mergeFrom: sourceBranch
+            });
+          }
+        }
+      }
+
+      function renderGraph() {
+        const svg = d3.select("#graph");
+        svg.selectAll("*").remove();
+
+        const width = 800;
+        const height = 400;
+        const margin = { top: 20, right: 20, bottom: 20, left: 100 };
+
+        const xScale = d3.scaleLinear().domain([0, 20]).range([margin.left, width - margin.right]);
+        const yScale = d3.scaleBand().domain(Object.keys(branches)).range([margin.top, height - margin.bottom]).padding(0.5);
+
+        Object.keys(branches).forEach((branch, branchIndex) => {
+          const commits = branches[branch];
+          const y = yScale(branch);
+
+          commits.forEach((commit, commitIndex) => {
+            const x = xScale(commitIndex);
+
+            svg.append("circle")
+              .attr("cx", x)
+              .attr("cy", y)
+              .attr("r", 10)
+              .attr("fill", d3.schemeCategory10[branchIndex % 10])
+              .append("title")
+              .text(commit.message);
+
+            if (commitIndex > 0) {
+              svg.append("line")
+                .attr("x1", xScale(commitIndex - 1))
+                .attr("y1", y)
+                .attr("x2", x)
+                .attr("y2", y)
+                .attr("stroke", d3.schemeCategory10[branchIndex % 10])
+                .attr("stroke-width", 2);
+            }
+
+            if (commit.mergeFrom) {
+              const source = commit.mergeFrom;
+              const sourceY = yScale(source);
+              const sourceX = xScale(branches[source].length - 1);
+
+              svg.append("line")
+                .attr("x1", sourceX)
+                .attr("y1", sourceY)
+                .attr("x2", x)
+                .attr("y2", y)
+                .attr("stroke", "gray")
+                .attr("stroke-dasharray", "4 2")
+                .attr("stroke-width", 2);
+            }
+          });
+
+          svg.append("text")
+            .attr("x", margin.left - 10)
+            .attr("y", y)
+            .attr("dy", "0.35em")
+            .attr("text-anchor", "end")
+            .text(branch);
+        });
+      }
+
+      button.addEventListener("click", () => {
+        const commands = input.value.trim().split(/\r?\n/).map(cmd => cmd.trim()).filter(cmd => cmd.length > 0);
+        commands.forEach(cmd => handleCommand(cmd));
+        renderGraph();
+        input.value = "";
+      });
+
+      setTimeout(renderGraph, 0);
+    </script>
   </body>
 </html>
